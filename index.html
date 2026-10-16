@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HydroQuest — Engineering Hydrology Game</title>
+<style>
+  :root{--blue:#0a66c2;--deep:#083b66;--light:#e8f3fc;--green:#2e9e5b;--red:#d64545;--amber:#e8a13a;}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;}
+  body{background:linear-gradient(135deg,#0a66c2,#083b66);min-height:100vh;color:#222;}
+  .wrap{max-width:960px;margin:0 auto;padding:16px;}
+  header{color:#fff;text-align:center;padding:24px 10px;}
+  header h1{font-size:2rem;letter-spacing:2px;}
+  header p{opacity:.85;margin-top:6px;}
+  .card{background:#fff;border-radius:14px;padding:22px;margin-bottom:16px;box-shadow:0 4px 14px rgba(0,0,0,.25);}
+  h2{color:var(--deep);margin-bottom:10px;}
+  h3{color:var(--blue);margin:14px 0 6px;}
+  .theory{background:var(--light);border-left:4px solid var(--blue);padding:12px 14px;border-radius:6px;font-size:.95rem;line-height:1.55;}
+  .theory b{color:var(--deep);}
+  .formula{background:#0b1d2c;color:#8fe3ff;font-family:Consolas,monospace;padding:10px 14px;border-radius:8px;margin:10px 0;text-align:center;font-size:1.05rem;}
+  button{cursor:pointer;border:none;border-radius:8px;padding:10px 18px;font-size:.95rem;font-weight:600;transition:.15s;}
+  .btn-primary{background:var(--blue);color:#fff;}
+  .btn-primary:hover{background:#0855a3;}
+  .btn-green{background:var(--green);color:#fff;}
+  .btn-green:hover{background:#268a4c;}
+  .btn-gray{background:#d9dee4;color:#333;}
+  .btn-gray:hover{background:#c7cdd4;}
+  .options{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+  .options button{background:#eef4fa;border:2px solid #cfe0f0;text-align:left;}
+  .options button:hover{border-color:var(--blue);}
+  .options button.correct{background:#dcf5e4;border-color:var(--green);}
+  .options button.wrong{background:#fbe1e1;border-color:var(--red);}
+  input[type=number]{padding:10px;border:2px solid #cfe0f0;border-radius:8px;font-size:1rem;width:160px;}
+  .feedback{margin-top:14px;padding:12px;border-radius:8px;font-weight:600;display:none;}
+  .feedback.ok{display:block;background:#dcf5e4;color:#1d6b3a;}
+  .feedback.no{display:block;background:#fbe1e1;color:#8f2b2b;}
+  .feedback p{font-weight:400;margin-top:6px;font-size:.92rem;}
+  .hud{display:flex;justify-content:space-between;align-items:center;color:#fff;margin-bottom:10px;flex-wrap:wrap;gap:8px;}
+  .badge{background:rgba(255,255,255,.15);padding:6px 14px;border-radius:20px;font-size:.85rem;font-weight:600;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px;}
+  .lvl-btn{background:#fff;border-radius:10px;padding:14px 10px;text-align:center;box-shadow:0 3px 8px rgba(0,0,0,.2);border:none;}
+  .lvl-btn .num{font-size:1.5rem;font-weight:800;color:var(--blue);}
+  .lvl-btn .name{font-size:.78rem;margin-top:4px;color:#444;line-height:1.2;}
+  .lvl-btn .stars{color:var(--amber);font-size:.85rem;margin-top:4px;min-height:1em;}
+  .lvl-btn.locked{opacity:.45;cursor:not-allowed;}
+  canvas{width:100%;background:#0b1d2c;border-radius:10px;margin-top:10px;display:block;}
+  .sim-controls{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;align-items:center;}
+  .sim-controls label{font-size:.85rem;font-weight:600;}
+  input[type=range]{width:140px;vertical-align:middle;}
+  .val{color:var(--blue);font-weight:700;font-family:Consolas,monospace;}
+  .hidden{display:none !important;}
+  .nav{display:flex;justify-content:space-between;margin-top:16px;}
+  .timer{font-family:Consolas,monospace;font-weight:700;}
+  .confetti{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:99;}
+  @media(max-width:600px){header h1{font-size:1.4rem;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>💧 HYDROQUEST</h1>
+    <p>An Engineering Hydrology Adventure — 10 Levels · Calculations · Live Hydrograph Simulation</p>
+  </header>
+  <div class="hud">
+    <span class="badge">⭐ Score: <span id="score">0</span></span>
+    <span class="badge">🏅 Level: <span id="lvlnow">–</span></span>
+    <span class="badge">🎓 Engineer: <span id="pname">Player</span></span>
+  </div>
+  <div id="app"></div>
+</div>
+<canvas class="confetti hidden" id="confetti"></canvas>
+
+<script>
+/* ================= STATE ================= */
+let S = { score:0, unlocked: parseInt(localStorage.getItem('hq_unlocked')||1),
+          stars: JSON.parse(localStorage.getItem('hq_stars')||'{}'),
+          name: localStorage.getItem('hq_name')||'' };
+function save(){ localStorage.setItem('hq_unlocked',S.unlocked);
+  localStorage.setItem('hq_stars',JSON.stringify(S.stars));
+  localStorage.setItem('hq_name',S.name); localStorage.setItem('hq_score',S.score); }
+S.score = parseInt(localStorage.getItem('hq_score')||0);
+
+/* ================= HELPERS ================= */
+function theory(html){return '<div class="theory">'+html+'</div>';}
+function formula(f){return '<div class="formula">'+f+'</div>';}
+function fb(ok,msg,extra){return '<div class="feedback '+(ok?'ok':'no')+'">'+(ok?'✅ Correct! +':'❌ Not quite — ')+
+  msg+(extra?'<p>'+extra+'</p>':'')+'</div>';}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function rand(a,b){return Math.round((a+Math.random()*(b-a))*10)/10;}
+function irr(n){ // irrational-looking options
+  const s=new Set([n]); let guard=0;
+  while(s.size<4 && guard++<200){ const f=[0.5,0.75,1.25,1.5,2,0.9,1.1][Math.floor(Math.random()*7)];
+    const v=Math.round(n*f*100)/100; if(v>0) s.add(v); }
+  return shuffle([...s]).map(v=>v.toFixed(2));
+}
+function confettiBurst(){const c=document.getElementById('confetti');c.classList.remove('hidden');
+  const x=c.getContext('2d');c.width=innerWidth;c.height=innerHeight;
+  const P=Array.from({length:150},()=>({x:Math.random()*c.width,y:-20-Math.random()*c.height,
+    r:4+Math.random()*6,vy:2+Math.random()*3,vx:-2+Math.random()*4,col:`hsl(${Math.random()*360},90%,60%)`}));
+  let t=0;(function anim(){x.clearRect(0,0,c.width,c.height);
+    P.forEach(p=>{p.y+=p.vy;p.x+=p.vx;x.fillStyle=p.col;x.beginPath();x.arc(p.x,p.y,p.r,0,7);x.fill();});
+    if(++t<160)requestAnimationFrame(anim);else c.classList.add('hidden');})();}
+
+/* ================= HYDROLOGY ENGINE (for simulator) ================= */
+function kirpich_tc(L,S){ // minutes
+  return 0.0195 * Math.pow(L,0.77) / Math.pow(S,0.385); }
+function scs_runoff(P,CN){ const Smm=25400/CN-254;
+  return P>0.2*Smm ? Math.pow(P-0.2*Smm,2)/(P+0.8*Smm) : 0; }
+function triangular_UH(P_mm,D_hr,A_km2,CN,tc_min){ // returns {qp,tp,tb,series}
+  const tc=tc_min/60; const R=scs_runoff(P_mm,CN);
+  const tp=D_hr/2+0.6*tc; const tb=2.67*tp;
+  const V=A_km2*R*1000; // m3
+  const qp=2*V/tb/3600; // m3/s
+  const series=[]; const dt=tb/60;
+  for(let t=0;t<=tb;t+=dt){ const q=t<=tp?qp*t/tp:qp*(1-(t-tp)/(tb-tp)); series.push([t,q]); }
+  return {qp:qp,tp:tp,tb:tb,R:R,series:series}; }
+
+/* ================= SIMULATOR (used in Levels 5 & 7) ================= */
+let simState=null;
+function renderSim(canvasId,opts){
+  simState = { L:rand(800,2200), Sg:rand(0.005,0.02), A:rand(5,40), P:rand(40,120),
+               D:rand(1,6), CN:opts==='cn'?rand(60,90):82, Afix:opts==='rat'?true:false };
+  document.getElementById('simL').value=simState.L; document.getElementById('simS').value=simState.Sg;
+  document.getElementById('simA').value=simState.A; document.getElementById('simP').value=simState.P;
+  document.getElementById('simD').value=simState.D;
+  if(document.getElementById('simCN')) document.getElementById('simCN').value=simState.CN;
+  updateSim();
+}
+function updateSim(){
+  if(!simState)return;
+  ['L','Sg','A','P','D'].forEach(k=>{simState[k]=parseFloat(document.getElementById('sim'+k[0].toUpperCase()).value);});
+  if(document.getElementById('simCN')) simState.CN=parseFloat(document.getElementById('simCN').value);
+  const s=simState;
+  const tc=kirpich_tc(s.L,s.Sg);
+  const uh=triangular_UH(s.P,s.D,s.A,s.CN,tc);
+  simState.answer={qp:uh.qp,tp:uh.tp,R:uh.R,tc:tc};
+  // labels
+  document.getElementById('vL').textContent=s.L.toFixed(0);
+  document.getElementById('vS').textContent=s.Sg.toFixed(3);
+  document.getElementById('vA').textContent=s.A.toFixed(1);
+  document.getElementById('vP').textContent=s.P.toFixed(0);
+  document.getElementById('vD').textContent=s.D.toFixed(1);
+  if(document.getElementById('vCN')) document.getElementById('vCN').textContent=s.CN.toFixed(0);
+  drawSim(uh);
+}
+function drawSim(uh){
+  const c=document.getElementById('hydroCanvas');const x=c.getContext('2d');
+  c.width=c.clientWidth*2;c.height=c.clientHeight*2;
+  const W=c.width,H=c.height,pad=70;
+  const tmax=uh.tb*1.15,qmax=uh.qp*1.25;
+  x.fillStyle='#0b1d2c';x.fillRect(0,0,W,H);
+  // axes
+  x.strokeStyle='#3b6a8f';x.lineWidth=2;
+  x.beginPath();x.moveTo(pad,H-pad);x.lineTo(W-pad/2,H-pad);x.lineTo(pad,H-pad);x.lineTo(pad,pad/2);x.stroke();
+  x.fillStyle='#8fe3ff';x.font='22px Arial';
+  x.fillText('Q (m³/s)',pad-55,pad/2+10);x.fillText('t (hours)',W-pad/2-40,H-pad+45);
+  // grid
+  x.strokeStyle='#16344a';x.lineWidth=1;
+  for(let i=1;i<6;i++){const gx=pad+(W-pad*1.5)*i/6;x.beginPath();x.moveTo(gx,H-pad);x.lineTo(gx,pad/2);x.stroke();
+    const gy=H-pad-(H-pad*1.5)*i/6;x.beginPath();x.moveTo(pad,gy);x.lineTo(W-pad/2,gy);x.stroke();}
+  // rainfall hyetograph (bars at top)
+  const bars=12,bw=(W-pad*1.5)/bars*0.6;
+  x.fillStyle='#3fa9f5';
+  for(let i=0;i<bars;i++){const rainT=i*simState.D/bars;
+    const h=(H-pad*1.5)*0.25*(1-Math.abs(rainT-simState.D/2)/(simState.D/2+0.001));
+    if(h>0){const bx=pad+(W-pad*1.5)*(rainT/(tmax));
+      x.fillRect(bx,pad/2+ (H-pad*1.5)*0.25 - h, bw, h);}}
+  // hydrograph curve
+  x.strokeStyle='#ffd34d';x.lineWidth=4;x.beginPath();
+  uh.series.forEach(([t,q],i)=>{const px=pad+(W-pad*1.5)*t/tmax,py=H-pad-(H-pad*1.5)*q/qmax;
+    i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();
+  // peak marker
+  const px=pad+(W-pad*1.5)*uh.tp/tmax,py=H-pad-(H-pad*1.5)*uh.qp/qmax;
+  x.fillStyle='#ff6b6b';x.beginPath();x.arc(px,py,9,0,7);x.fill();
+  x.fillStyle='#fff';x.font='bold 22px Arial';
+  x.fillText('Peak: '+uh.qp.toFixed(1)+' m³/s @ '+uh.tp.toFixed(2)+' hr',pad+15,pad/2+ (H-pad*1.5)*0.25 +40);
+}
+
+/* ================= LEVEL DEFINITIONS ================= */
+const LEVELS=[
+/* ---------- LEVEL 1 : WATER CYCLE ---------- */
+{ title:"The Water Cycle", icon:"🌊",
+  make(){ const panE = rand(6,10), panC = rand(0.6,0.85);
+    return { theory: theory("<b>Welcome, hydrologist!</b> Water circulates endlessly between the ocean, atmosphere and land. The main stores are the <b>ocean (96.5%)</b>, <b>ice caps</b>, <b>groundwater</b> and <b>lakes/rivers</b>. Fluxes move water between them: <b>evaporation</b> (liquid→vapour), <b>condensation</b> (vapour→cloud), <b>precipitation</b> (rain, snow), <b>infiltration</b> (into soil), <b>runoff</b> (overland flow to streams) and <b>transpiration</b> (from plants)."),
+    formula: formula("Global balance: Precipitation = Evaporation (over land + ocean, long-term average)"),
+    task:`<h3>Mission 1.1 — Order the cycle</h3><p>Which sequence correctly describes the atmospheric branch of the cycle?</p>
+    <div class="options" data-answer="c">
+      <button data-v="a">Ocean → runoff → condensation → evaporation</button>
+      <button data-v="b">Infiltration → precipitation → evaporation → runoff</button>
+      <button data-v="c">Evaporation → condensation → precipitation → runoff/infiltration</button>
+      <button data-v="d">Transpiration → runoff → condensation → infiltration</button>
+    </div>
+    <div id="fb"></div>
+    <h3>Mission 1.2 — Calculate evaporation 💧</h3>
+    <p>A Class-A evaporation pan records <b>${panE.toFixed(1)} mm/day</b>. The pan coefficient for this lake region is <b>${panC.toFixed(2)}</b>.</p>
+    ${formula("Lake evaporation = pan coefficient × pan evaporation")}
+    <p>Lake evaporation = <input type="number" id="a12" step="0.01"> mm/day
+    <button class="btn-green" onclick="checkNum('a12',${(panE*panC).toFixed(2)},'Lake evaporation = ${panC.toFixed(2)} × ${panE.toFixed(1)} = ${(panE*panC).toFixed(2)} mm/day')">Check</button></p>
+    <div id="fb2"></div>` } },
+  verify(){ },
+},
+/* ---------- LEVEL 2 : RAINFALL ---------- */
+{ title:"Rainfall Measurement", icon:"🌧️",
+  make(){ const tips=Math.floor(rand(150,400)); const area=rand(2,8);
+    return { theory: theory("Rainfall is measured with <b>tipping-bucket gauges</b> (each tip = fixed depth, e.g. 0.2 mm) and <b>weighing gauges</b>. Rainfall <b>depth</b> (mm) over a catchment converts to <b>volume</b>: 1 mm over 1 km² = 1,000 m³ of water. Rainfall intensity i = depth/duration (mm/hr) is the key design variable."),
+    formula: formula("Volume V = depth P (mm) × area A (km²) × 1000   →   [m³]"),
+    task:`<h3>Mission 2.1 — Gauge reading</h3><p>A tipping-bucket gauge tips <b>${tips} times</b> during a storm. Each tip = <b>0.2 mm</b>.</p>
+    ${formula("Storm depth = tips × 0.2")}
+    <p>Storm depth = <input type="number" id="a21" step="0.1"> mm <button class="btn-green" onclick="checkNum('a21',${tips*0.2},'Depth = ${tips} × 0.2 = ${(tips*0.2).toFixed(1)} mm')">Check</button></p><div id="fb"></div>
+    <h3>Mission 2.2 — Convert to volume</h3><p>That storm falls on a catchment of <b>${area} km²</b>. How much water volume fell?</p>
+    <p>V = <input type="number" id="a22" step="any"> m³ <button class="btn-green" onclick="checkNum('a22',${(tips*0.2)*area*1000},'V = ${(tips*0.2).toFixed(1)} mm × ${area} km² × 1000 = ${((tips*0.2)*area*1000).toFixed(0)} m³')">Check</button></p><div id="fb2"></div>` } },
+},
+/* ---------- LEVEL 3 : AREAL RAINFALL ---------- */
+{ title:"Areal Rainfall (Thiessen)", icon:"🗺️",
+  make(){ const p=[rand(40,60),rand(50,70),rand(60,90)]; const w=[rand(30,40),rand(25,35),rand(25,35)];
+    const wsum=w.reduce((a,b)=>a+b,0);
+    const avg=(p[0]*w[0]+p[1]*w[1]+p[2]*w[2])/wsum;
+    return { theory: theory("A catchment rarely has uniform rain. Three common averaging methods: <b>arithmetic mean</b> (simple, uneven gauges ok), <b>Thiessen polygons</b> (weight each gauge by its representative area) and <b>isohyetal</b> (draw rainfall contour lines). Thiessen: <b>P_avg = Σ AᵢPᵢ / Σ Aᵢ</b>."),
+    formula: formula("Thiessen:  P_avg = Σ (Aᵢ × Pᵢ) / Σ Aᵢ"),
+    task:`<h3>Mission 3.1 — Three-gauge Thiessen</h3><p>Gauges record <b>${p[0].toFixed(0)}, ${p[1].toFixed(0)} and ${p[2].toFixed(0)} mm</b>, with Thiessen weights <b>${w[0].toFixed(0)}%, ${w[1].toFixed(0)}% and ${w[2].toFixed(0)}%</b>.</p>
+    <p>Areal rainfall = <input type="number" id="a31" step="0.01"> mm <button class="btn-green" onclick="checkNum('a31',${avg.toFixed(2)},'P_avg = (${p[0].toFixed(0)}×${w[0].toFixed(0)} + ${p[1].toFixed(0)}×${w[1].toFixed(0)} + ${p[2].toFixed(0)}×${w[2].toFixed(0)})/${wsum.toFixed(0)} = ${avg.toFixed(2)} mm')">Check</button></p><div id="fb"></div>
+    <h3>Mission 3.2 — Concept check</h3><p>Which method is generally <b>most accurate</b> in mountainous terrain with steep rainfall gradients?</p>
+    <div class="options" data-answer="b">
+      <button data-v="a">Arithmetic mean</button><button data-v="b">Isohyetal method</button>
+      <button data-v="c">Thiessen polygons</button><button data-v="d">Single central gauge</button>
+    </div><div id="fb2"></div>` } },
+},
+/* ---------- LEVEL 4 : RUNOFF (Rational Method) ---------- */
+{ title:"Runoff — Rational Method", icon:"🏞️",
+  make(){ const C=rand(0.3,0.85), i=rand(40,120), A=rand(0.5,8);
+    const Q=C*i*A/3.6;
+    return { theory: theory("Only part of the rain becomes <b>direct runoff</b>; the rest infiltrates or evaporates. The <b>runoff coefficient C</b> packs all losses into one number (0.3 lawn → 0.95 concrete). For small urban catchments, the <b>Rational Method</b> gives peak discharge: <b>Q = C·i·A/3.6</b> (i in mm/hr, A in km², Q in m³/s)."),
+    formula: formula("Q = C · i · A / 3.6   [m³/s]"),
+    task:`<h3>Mission 4.1 — Peak discharge</h3><p>A housing estate has <b>C = ${C.toFixed(2)}</b>, design intensity <b>i = ${i.toFixed(0)} mm/hr</b>, area <b>A = ${A.toFixed(1)} km²</b>.</p>
+    <p>Q = <input type="number" id="a41" step="0.01"> m³/s <button class="btn-green" onclick="checkNum('a41',${Q.toFixed(2)},'Q = ${C.toFixed(2)} × ${i.toFixed(0)} × ${A.toFixed(1)} / 3.6 = ${Q.toFixed(2)} m³/s')">Check</button></p><div id="fb"></div>
+    <h3>Mission 4.2 — Sensitivity</h3><p>What happens to Q if the estate is fully paved (C rises), with i and A unchanged?</p>
+    <div class="options" data-answer="c">
+      <button data-v="a">Q decreases</button><button data-v="b">Q stays the same</button>
+      <button data-v="c">Q increases proportionally with C</button><button data-v="d">Q depends only on A</button>
+    </div><div id="fb2"></div>` } },
+},
+/* ---------- LEVEL 5 : TIME OF CONCENTRATION (SIM) ---------- */
+{ title:"Time of Concentration", icon:"⏱️",
+  make(){ return { theory: theory("<b>Kirpich equation</b> estimates the time for water to travel from the catchment's farthest point to the outlet: <b>t_c = 0.0195·L^0.77/S^0.385</b> (minutes; L = longest flow path in m, S = slope m/m). Steeper, shorter catchments respond faster — a flashier hydrograph."),
+    formula: formula("t_c = 0.0195 L^0.77 / S^0.385   [minutes]"),
+    task:`<h3>Mission 5.1 — Run the simulator, then calculate</h3>
+    <p>Adjust the catchment below and observe the response. Then compute t_c for: <b>L = 1200 m</b>, <b>S = 0.01</b>.</p>
+    ${this.simHtml('noCN')}
+    <p>t_c = <input type="number" id="a51" step="0.01"> minutes <button class="btn-green" onclick="checkNum('a51',${ (0.0195*Math.pow(1200,0.77)/Math.pow(0.01,0.385)).toFixed(2)},'t_c = 0.0195 × 1200^0.77 / 0.01^0.385 ≈ ${(0.0195*Math.pow(1200,0.77)/Math.pow(0.01,0.385)).toFixed(2)} min')">Check</button></p><div id="fb"></div>
+    <h3>Mission 5.2 — Concept</h3><p>Doubling the channel slope S (with L fixed) will:</p>
+    <div class="options" data-answer="b">
+      <button data-v="a">Double t_c</button><button data-v="b">Decrease t_c (t_c ∝ S^-0.385)</button>
+      <button data-v="c">Leave t_c unchanged</button><button data-v="d">Increase t_c fourfold</button>
+    </div><div id="fb2"></div>` } },
+  simHtml(cn){ return `<div class="card" style="background:#0e2a40;padding:14px;">
+    <div class="sim-controls" style="color:#cfe8ff;">
+      <label>L (m): <span class="val" id="vL"></span><input type="range" id="simL" min="300" max="3000" step="50" oninput="updateSim()"></label>
+      <label>Slope: <span class="val" id="vS"></span><input type="range" id="simS" min="0.002" max="0.05" step="0.001" oninput="updateSim()"></label>
+      <label>A (km²): <span class="val" id="vA"></span><input type="range" id="simA" min="1" max="60" step="1" oninput="updateSim()"></label>
+      <label>P (mm): <span class="val" id="vP"></span><input type="range" id="simP" min="10" max="200" step="5" oninput="updateSim()"></label>
+      <label>D (hr): <span class="val" id="vD"></span><input type="range" id="simD" min="0.5" max="12" step="0.5" oninput="updateSim()"></label>
+      ${cn==='cn'?'<label>CN: <span class="val" id="vCN"></span><input type="range" id="simCN" min="50" max="95" step="1" oninput="updateSim()"></label>':''}
+    </div>
+    <canvas id="hydroCanvas" style="height:300px;"></canvas>
+    <p style="color:#8fb8d8;font-size:.8rem;margin-top:6px;">Blue bars = rainfall hyetograph · Yellow = runoff hydrograph · Red dot = peak. Hydrograph built from SCS-CN runoff + triangular unit hydrograph.</p>
+  </div>` } },
+/* ---------- LEVEL 6 : SCS-CN ---------- */
+{ title:"SCS Curve Number", icon:"🌱",
+  make(){ const CN=rand(58,90), P=rand(50,130);
+    const Smm=25400/CN-254;
+    const Q=P>0.2*Smm?Math.pow(P-0.2*Smm,2)/(P+0.8*Smm):0;
+    return { theory: theory("The <b>SCS-CN method</b> (USDA) estimates direct runoff from rainfall using a <b>Curve Number (CN, 30–100)</b>: high CN = paved/tight soils (more runoff), low CN = forest/permeable (more infiltration). Retention <b>S = 25400/CN − 254</b> (mm), initial abstraction I_a = 0.2S, and <b>Q = (P−0.2S)²/(P+0.8S)</b> for P > 0.2S, else Q = 0."),
+    formula: formula("S = 25400/CN − 254 ;  Q = (P − 0.2S)² / (P + 0.8S)"),
+    task:`<h3>Mission 6.1 — Compute S</h3><p>A pasture has <b>CN = ${CN.toFixed(0)}</b>. Find the retention S.</p>
+    <p>S = <input type="number" id="a61" step="0.01"> mm <button class="btn-green" onclick="checkNum('a61',${Smm.toFixed(2)},'S = 25400/${CN.toFixed(0)} − 254 = ${Smm.toFixed(2)} mm')">Check</button></p><div id="fb"></div>
+    <h3>Mission 6.2 — Compute runoff</h3><p>A storm delivers <b>P = ${P.toFixed(0)} mm</b>. Rain falls on this pasture (same CN). Find direct runoff Q. (If P ≤ 0.2S, Q = 0 — check first!)</p>
+    <p>Q = <input type="number" id="a62" step="0.01"> mm <button class="btn-green" onclick="checkNum('a62',${Q.toFixed(2)},'${P.toFixed(0)} > 0.2×${Smm.toFixed(1)}=${(0.2*Smm).toFixed(1)}, so Q = (${P.toFixed(0)}−${(0.2*Smm).toFixed(1)})²/(${P.toFixed(0)}+${(0.8*Smm).toFixed(1)}) = ${Q.toFixed(2)} mm')">Check</button></p><div id="fb2"></div>` } },
+},
+/* ---------- LEVEL 7 : HYDROGRAPH SIM CHALLENGE ---------- */
+{ title:"Hydrograph Challenge", icon:"📈",
+  make(){ return { theory: theory("A <b>hydrograph</b> is the graph of discharge Q vs time at a section. Key features: <b>rising limb</b>, <b>peak Q_p</b>, <b>time to peak t_p</b>, and <b>recession limb</b>. We build it here with the <b>triangular unit hydrograph</b>: peak <b>q_p = 2V/t_b</b>, base <b>t_b = 2.67 t_p</b>, t_p = D/2 + 0.6 t_c, where V = runoff volume (m³)."),
+    formula: formula("t_p = D/2 + 0.6 t_c ;  t_b = 2.67 t_p ;  q_p = 2V/t_b"),
+    task:`<h3>Mission 7.1 — Explore the simulator</h3>
+    <p>Change <b>P</b> and <b>CN</b> and watch the peak move. Now set the sliders exactly to: <b>L=1500 m, S=0.010, A=25 km², P=80 mm, D=3 hr, CN=75</b>. Note the <span style="color:#d64545;font-weight:700;">red peak</span> value.</p>
+    ${LEVELS[4].simHtml('cn')}
+    <h3>Mission 7.2 — What is the simulated peak?</h3>
+    <div class="options" data-answer="${(()=>{const tc=kirpich_tc(1500,0.01);const uh=triangular_UH(80,3,25,75,tc);
+      this._opts=irr(uh.qp); return this._opts.indexOf(uh.qp.toFixed(2)).toString();})()}">
+      ${this._opts.map((o,i)=>`<button data-v="${i}">${o} m³/s</button>`).join('')}
+    </div><div id="fb"></div>
+    <p style="font-size:.85rem;color:#666;">Tip: you can also verify by hand — S = 25400/75−254 = 84.7 mm, Q = (80−16.9)²/(80+67.7) ≈ 26.9 mm, t_c ≈ ${kirpich_tc(1500,0.01).toFixed(1)} min…</p>` } },
+},
+/* ---------- LEVEL 8 : DAMS & RESERVOIRS ---------- */
+{ title:"Dams & Reservoirs", icon:"🚧",
+  make(){ const Vin=rand(2,6), Vout=rand(1,4), Vevap=rand(0.2,1.5);
+    const dS=Vin-Vout-Vevap;
+    return { theory: theory("A reservoir stores water for <b>supply, hydropower, flood control and irrigation</b>. Its monthly <b>storage change</b> follows a mass balance: ΔS = Inflows − Outflows − Evaporation (as volumes, m³ or Mm³). If ΔS < 0 the pool is drawn down; a dam spillway passes excess once full. Water in storage also evaporates from the open surface — why reservoirs lose water even without releases."),
+    formula: formula("ΔS = V_in − V_out − V_evap   (per month)"),
+    task:`<h3>Mission 8.1 — Storage change</h3><p>A reservoir this month receives <b>${Vin.toFixed(1)} Mm³</b> of inflow, releases <b>${Vout.toFixed(1)} Mm³</b> downstream, and loses <b>${Vevap.toFixed(1)} Mm³</b> to evaporation.</p>
+    <p>ΔS = <input type="number" id="a81" step="0.01"> Mm³ <button class="btn-green" onclick="checkNum('a81',${dS.toFixed(2)},'ΔS = ${Vin.toFixed(1)} − ${Vout.toFixed(1)} − ${Vevap.toFixed(1)} = ${dS.toFixed(2)} Mm³. The pool ${dS>=0?'RISES':'FALLS'}.')">Check</button></p><div id="fb"></div>
+    <h3>Mission 8.2 — Dam function</h3><p>During a flood, the main purpose of keeping the reservoir level LOW before the storm arrives is to:</p>
+    <div class="options" data-answer="b">
+      <button data-v="a">Increase evaporation losses</button>
+      <button data-v="b">Create empty storage (flood cushion) to absorb the flood wave</button>
+      <button data-v="c">Raise the water temperature</button><button data-v="d">Increase sedimentation</button>
+    </div><div id="fb2"></div>` } },
+},
+/* ---------- LEVEL 9 : WATER BALANCE ---------- */
+{ title:"Catchment Water Balance", icon:"⚖️",
+  make(){ const P=rand(900,1600), ET=rand(500,900), dS=rand(-150,150);
+    const R=P-ET-dS;
+    return { theory: theory("The <b>catchment water balance</b> is the accounting identity of hydrology: over any period, <b>Precipitation = Runoff + Evapotranspiration + ΔStorage</b> (all in mm or m³). For long periods ΔS ≈ 0, so P ≈ R + ET. This single equation underpins irrigation scheduling, flood forecasting and climate studies."),
+    formula: formula("P = R + ET + ΔS   →   R = P − ET − ΔS"),
+    task:`<h3>Mission 9.1 — Find the runoff</h3><p>Over one year a catchment receives <b>P = ${P.toFixed(0)} mm</b>, evapotranspires <b>ET = ${ET.toFixed(0)} mm</b>, and storage increases by <b>ΔS = ${dS.toFixed(0)} mm</b>.</p>
+    <p>Runoff R = <input type="number" id="a91" step="0.1"> mm <button class="btn-green" onclick="checkNum('a91',${R.toFixed(1)},'R = ${P.toFixed(0)} − ${ET.toFixed(0)} − (${dS.toFixed(0)}) = ${R.toFixed(1)} mm')">Check</button></p><div id="fb"></div>
+    <h3>Mission 9.2 — Runoff coefficient</h3><p>Using your answer, the annual runoff coefficient C = R/P is:</p>
+    <p>C = <input type="number" id="a92" step="0.001"> <button class="btn-green" onclick="checkNum('a92',${(R/P).toFixed(3)},'C = ${R.toFixed(1)} / ${P.toFixed(0)} = ${(R/P).toFixed(3)}')">Check</button></p><div id="fb2"></div>` } },
+},
+/* ---------- LEVEL 10 : RETURN PERIOD + MASTER ---------- */
+{ title:"Master Hydrologist", icon:"🏆",
+  make(){ const T=rand(20,100); const p=(1-1/T)*100;
+    return { theory: theory("<b>Return period T</b> (e.g. the “100-year storm”) means an event of that size is <b>exceeded with probability 1/T in any year</b>. So the 50-year flood has a 2% chance of occurring — <b>every year</b>, not once every 50 years! Probability of at least one exceedance in n years: <b>P = 1 − (1−1/T)ⁿ</b>. Engineers choose T by risk: culverts ~25 yr, urban drainage ~10–50 yr, dam spillways ~100–10,000 yr."),
+    formula: formula("P(no exceedance in a year) = 1 − 1/T"),
+    task:`<h3>Mission 10.1 — Design storm probability</h3><p>A bridge is designed for the <b>${T.toFixed(0)}-year</b> flood. What is the probability (%) this flood is <b>NOT exceeded</b> in any given year?</p>
+    <p>P = <input type="number" id="a101" step="0.01"> % <button class="btn-green" onclick="checkNum('a101',${p.toFixed(2)},'P = (1 − 1/${T.toFixed(0)}) × 100 = ${p.toFixed(2)}%')">Check</button></p><div id="fb"></div>
+    <h3>Mission 10.2 — The Final Judgment 💎</h3><p>Rank these floods by <b>peak discharge</b>, largest first (same catchment, same CN):</p>
+    <div class="options" data-answer="b">
+      <button data-v="a">2-yr &lt; 25-yr &lt; 100-yr</button>
+      <button data-v="b">100-yr &gt; 25-yr &gt; 2-yr</button>
+      <button data-v="c">All identical — only duration matters</button>
+      <button data-v="d">2-yr &gt; 100-yr because it rains more often</button>
+    </div><div id="fb2"></div>
+    <h3>Mission 10.3 — Water balance in one line</h3><p>Complete the identity: <b>P = ___ + ___ + ΔS</b> (use R and ET):</p>
+    <div class="options" data-answer="c">
+      <button data-v="a">P = Dams + Rivers + ΔS</button>
+      <button data-v="b">P = CN + i + ΔS</button>
+      <button data-v="c">P = R + ET + ΔS</button>
+      <button data-v="d">P = Q + T + ΔS</button>
+    </div><div id="fb3"></div>` } },
+},
+];
+
+/* ================= CHECK FUNCTIONS ================= */
+function checkNum(id,val,msg){
+  const el=document.getElementById(id); const v=parseFloat(el.value);
+  const ok=isFinite(v)&&Math.abs(v-val)<Math.max(0.02,Math.abs(val)*0.015);
+  const box=el.parentElement.nextElementSibling;
+  box.outerHTML=fb(ok,(ok?'':'the answer is '+val+'. '),msg);
+  if(ok){S.score+=10;updateHUD();}
+}
+function checkMC(btn){
+  const wrap=btn.closest('.options'); const ans=wrap.dataset.answer;
+  const ok=btn.dataset.v===ans;
+  wrap.querySelectorAll('button').forEach(b=>{ if(b.dataset.v===ans)b.classList.add('correct'); });
+  if(!ok)btn.classList.add('wrong');
+  const box=wrap.nextElementSibling;
+  if(box && box.classList.contains('feedback')) box.outerHTML=fb(ok,'');
+  if(ok){S.score+=10;updateHUD();}
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('.options button'); if(b&&!b.closest('.options').dataset.done){b.closest('.options').dataset.done=1;checkMC(b);}
+});
+
+/* ================= NAV / RENDER ================= */
+let current=0, levelScoreStart=0, doneFlags={};
+function updateHUD(){document.getElementById('score').textContent=S.score;
+  document.getElementById('lvlnow').textContent=current?current+'/10':'–';
+  document.getElementById('pname').textContent=S.name||'Player';}
+
+function renderMenu(){
+  current=0;save();updateHUD();
+  let h='<div class="card"><h2>Select a Level</h2><p style="margin-bottom:6px;">Complete each level to unlock the next. Correct answers earn ⭐ 10 points. Progress is saved on this device.</p><div class="grid">';
+  LEVELS.forEach((L,i)=>{ const n=i+1, locked=n>S.unlocked;
+    const st=S.stars[n]||0;
+    h+=`<button class="lvl-btn ${locked?'locked':''}" ${locked?'':`onclick="startLevel(${n})"`}>
+      <div class="num">${locked?'🔒':L.icon}</div><div class="name"><b>Level ${n}</b><br>${L.title}</div>
+      <div class="stars">${'★'.repeat(st)}${'☆'.repeat(3-st)}</div></button>`;});
+  h+='</div><div class="nav"><span></span><button class="btn-gray" onclick="resetGame()">Reset Progress</button></div></div>';
+  document.getElementById('app').innerHTML=h;
+}
+function resetGame(){if(confirm('Erase all progress and score?')){localStorage.clear();S={score:0,unlocked:1,stars:{},name:''};renderMenu();}}
+
+function startLevel(n){
+  current=n; levelScoreStart=S.score; doneFlags={};
+  const L=LEVELS[n-1]; const data=L.make();
+  let h=`<div class="card"><h2>${L.icon} Level ${n}: ${L.title}</h2>${data.theory||''}`;
+  if(data.formula)h+=data.formula; h+=data.task;
+  h+=`<div class="nav"><button class="btn-gray" onclick="renderMenu()">← Menu</button>
+      <button class="btn-primary hidden" id="nextBtn" onclick="finishLevel()">Complete Level ▶</button></div></div>`;
+  document.getElementById('app').innerHTML=h;
+  updateHUD();
+  if(n===5)renderSim('hydroCanvas','noCN');
+  if(n===7)renderSim('hydroCanvas','cn');
+  watchLevel(n);
+}
+
+/* watch for level completion: all tasks answered correctly */
+function watchLevel(n){
+  const iv=setInterval(()=>{
+    const fbs=document.querySelectorAll('#app .feedback');
+    const opts=document.querySelectorAll('#app .options');
+    const need=fbs.length+opts.length;
+    const okC=document.querySelectorAll('#app .feedback.ok').length;
+    const doneO=document.querySelectorAll('#app .options[data-done]').length;
+    if(need>0&&okC+doneO>=need){
+      clearInterval(iv);
+      document.getElementById('nextBtn').classList.remove('hidden');
+    }
+  },500);
+}
+function finishLevel(){
+  const earned=S.score-levelScoreStart;
+  const stars=earned>=50?3:(earned>=25?2:1);
+  S.stars[current]=Math.max(S.stars[current]||0,stars);
+  S.unlocked=Math.max(S.unlocked,Math.min(10,current+1));
+  save();confettiBurst();
+  if(current===10){
+    document.getElementById('app').innerHTML=`<div class="card" style="text-align:center;">
+      <h2>🏆 Congratulations, Master Hydrologist ${S.name||''}!</h2>
+      <p style="font-size:1.1rem;margin:12px 0;">You conquered all 10 levels of HydroQuest!</p>
+      <p>⭐ Final score: <b>${S.score}</b> · Stars earned: <b>${Object.values(S.stars).reduce((a,b)=>a+b,0)}/30</b></p>
+      <div class="nav"><button class="btn-gray" onclick="renderMenu()">← Play Again</button></div></div>`;
+  } else { renderMenu(); }
+}
+
+/* ================= INIT ================= */
+if(!S.name){ S.name=prompt('Welcome to HydroQuest! Enter your engineer name:')||'Player'; save(); }
+updateHUD(); renderMenu();
+</script>
+</body>
+</html>
